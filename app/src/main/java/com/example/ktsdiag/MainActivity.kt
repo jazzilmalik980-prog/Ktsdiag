@@ -48,7 +48,7 @@ class Diag(val ctx: Context) {
     var lastChange by mutableStateOf("NONE")
     var lastData by mutableStateOf("...")
     var gatt: BluetoothGatt? = null
-    val ops = ArrayDeque<() -> Boolean>(); var busy = false
+    val ops = kotlin.collections.ArrayDeque<() -> Boolean>(); var busy = false
     fun key(c: BluetoothGattCharacteristic) = "${c.service.uuid}/${c.uuid}"
 
     fun addLog(ev: String, c: BluetoothGattCharacteristic? = null, v: ByteArray? = null, note: String = "") {
@@ -104,23 +104,29 @@ class Diag(val ctx: Context) {
         if (Build.VERSION.SDK_INT >= 33) g.writeCharacteristic(c, b, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
         else { c.value = b; g.writeCharacteristic(c) }
     }
-    fun record(c: BluetoothGattCharacteristic, v: ByteArray, ev: String) = h.post {
-        val k = key(c); val old = values[k]
-        if (monitoring && old != null && !old.contentEquals(v)) lastChange = "${SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())} ${c.uuid}: ${old.hex()} -> ${v.hex()}"
-        values[k] = v; lastData = "${c.uuid}: ${v.hex()}"; addLog(ev, c, v)
+    fun record(c: BluetoothGattCharacteristic, v: ByteArray, ev: String) {
+        h.post {
+            val k = key(c); val old = values[k]
+            if (monitoring && old != null && !old.contentEquals(v)) lastChange = "${SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())} ${c.uuid}: ${old.hex()} -> ${v.hex()}"
+            values[k] = v; lastData = "${c.uuid}: ${v.hex()}"; addLog(ev, c, v)
+        }
     }
     val cb = object : BluetoothGattCallback() {
-        override fun onConnectionStateChange(g: BluetoothGatt, st: Int, ns: Int) = h.post<Unit> {
-            if (ns == BluetoothProfile.STATE_CONNECTED) { status = "Connected"; addLog("CONNECTED") }
-            else { status = if (st != 0) "Connection error (GATT status $st) - device may not expose BLE/GATT" else "Disconnected"; addLog("DISCONNECTED", note = "status=$st"); g.close() }
-        }.let { }
-        override fun onServicesDiscovered(g: BluetoothGatt, st: Int) = h.post<Unit> {
-            chars.clear(); g.services.forEach { chars.addAll(it.characteristics) }
-            info += "\nBLE/GATT: ${g.services.size} services, ${chars.size} characteristics"; addLog("SERVICES", note = "${g.services.size} services")
-        }.let { }
+        override fun onConnectionStateChange(g: BluetoothGatt, st: Int, ns: Int) {
+            h.post {
+                if (ns == BluetoothProfile.STATE_CONNECTED) { status = "Connected"; addLog("CONNECTED") }
+                else { status = if (st != 0) "Connection error (GATT status $st) - device may not expose BLE/GATT" else "Disconnected"; addLog("DISCONNECTED", note = "status=$st"); g.close() }
+            }
+        }
+        override fun onServicesDiscovered(g: BluetoothGatt, st: Int) {
+            h.post {
+                chars.clear(); g.services.forEach { chars.addAll(it.characteristics) }
+                info += "\nBLE/GATT: ${g.services.size} services, ${chars.size} characteristics"; addLog("SERVICES", note = "${g.services.size} services")
+            }
+        }
         override fun onCharacteristicRead(g: BluetoothGatt, c: BluetoothGattCharacteristic, v: ByteArray, s: Int) { record(c, v, "READ"); h.post { next() } }
         @Deprecated("old") override fun onCharacteristicRead(g: BluetoothGatt, c: BluetoothGattCharacteristic, s: Int) { c.value?.let { record(c, it, "READ") }; h.post { next() } }
-        override fun onCharacteristicChanged(g: BluetoothGatt, c: BluetoothGattCharacteristic, v: ByteArray) = record(c, v, "NOTIFY")
+        override fun onCharacteristicChanged(g: BluetoothGatt, c: BluetoothGattCharacteristic, v: ByteArray) { record(c, v, "NOTIFY") }
         @Deprecated("old") override fun onCharacteristicChanged(g: BluetoothGatt, c: BluetoothGattCharacteristic) { c.value?.let { record(c, it, "NOTIFY") } }
         override fun onDescriptorWrite(g: BluetoothGatt, d: BluetoothGattDescriptor, s: Int) { h.post { addLog("NOTIFY_ENABLE", d.characteristic, note = "status=$s"); next() } }
         override fun onCharacteristicWrite(g: BluetoothGatt, c: BluetoothGattCharacteristic, s: Int) { h.post { addLog("WRITE_RESULT", c, note = "status=$s") } }
