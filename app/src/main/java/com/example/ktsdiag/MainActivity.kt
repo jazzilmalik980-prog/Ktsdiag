@@ -188,7 +188,7 @@ fun App(d: Diag) {
                 }
                 if (d.info.isNotEmpty()) Text(d.info, style = MaterialTheme.typography.bodySmall)
                 LazyColumn { items(d.devices.values.sortedWith(compareByDescending<Dev> { it.name.contains("1706", true) || it.name.contains("KBroad", true) }.thenByDescending { it.rssi }).toList()) { v ->
-                    Card(Modifier.fillMaxWidth().padding(vertical = 2.dp), onClick = { d.sel = v }) {
+                    Card(onClick = { d.sel = v }, modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
                         Text("${v.name}\n${v.addr} | ${v.type} | RSSI ${v.rssi} | bond ${v.dev.bondState}", Modifier.padding(8.dp))
                     }
                 } }
