@@ -90,14 +90,14 @@ class Diag(val ctx: Context) {
     fun discover() { gatt?.discoverServices() }
     fun read(c: BluetoothGattCharacteristic) = enqueue { gatt?.readCharacteristic(c) == true }
     fun readAll() = chars.filter { it.properties and BluetoothGattCharacteristic.PROPERTY_READ != 0 }.forEach { read(it) }
-    fun notify(c: BluetoothGattCharacteristic) = enqueue {
+    fun subscribe(c: BluetoothGattCharacteristic) = enqueue {
         val g = gatt ?: return@enqueue false
         g.setCharacteristicNotification(c, true)
         val d = c.getDescriptor(CCCD) ?: return@enqueue false
         val v = if (c.properties and BluetoothGattCharacteristic.PROPERTY_NOTIFY != 0) BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE else BluetoothGattDescriptor.ENABLE_INDICATION_VALUE
         if (Build.VERSION.SDK_INT >= 33) g.writeDescriptor(d, v) == 0 else { d.value = v; g.writeDescriptor(d) }
     }
-    fun notifyAll() = chars.filter { it.properties and 0x30 != 0 }.forEach { notify(it) }
+    fun subscribeAll() = chars.filter { it.properties and 0x30 != 0 }.forEach { subscribe(it) }
     fun write(c: BluetoothGattCharacteristic, b: ByteArray) {
         val g = gatt ?: return
         addLog("WRITE", c, b)
@@ -132,7 +132,7 @@ class Diag(val ctx: Context) {
         override fun onCharacteristicWrite(g: BluetoothGatt, c: BluetoothGattCharacteristic, s: Int) { h.post { addLog("WRITE_RESULT", c, note = "status=$s") } }
     }
     fun capture(label: String) {
-        readAll(); notifyAll()
+        readAll(); subscribeAll()
         h.postDelayed({ caps[label] = HashMap(values); addLog("CAPTURE", note = "$label: ${values.size} values") }, 2500)
     }
     fun compare() {
@@ -194,7 +194,7 @@ fun App(d: Diag) {
                 } }
             }
             "svc" -> {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Button({ d.readAll() }) { Text("READ ALL") }; Button({ d.notifyAll() }) { Text("NOTIFY ALL") } }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Button({ d.readAll() }) { Text("READ ALL") }; Button({ d.subscribeAll() }) { Text("NOTIFY ALL") } }
                 LazyColumn { items(d.chars.toList()) { c -> CharRow(d, c) } }
             }
             "flash" -> {
@@ -203,7 +203,7 @@ fun App(d: Diag) {
                 Text("Flashlight status: ${d.flash()}")
                 Text("Last detected change: ${d.lastChange}")
                 Text("Last received Bluetooth data: ${d.lastData}")
-                Button({ mon = !mon; d.monitoring = mon; if (mon) { d.readAll(); d.notifyAll() } }) { Text(if (mon) "STOP MONITORING" else "START MONITORING") }
+                Button({ mon = !mon; d.monitoring = mon; if (mon) { d.readAll(); d.subscribeAll() } }) { Text(if (mon) "STOP MONITORING" else "START MONITORING") }
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     item {
                         Text("Manual test (captures: ${d.caps.keys.joinToString()})")
@@ -236,7 +236,7 @@ fun CharRow(d: Diag, c: BluetoothGattCharacteristic) {
         if (v != null) Text("HEX ${v.hex()}\n${v.parsed()}")
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             if (p and 2 != 0) Button({ d.read(c) }) { Text("READ") }
-            if (p and 0x30 != 0) Button({ d.notify(c) }) { Text("NOTIFY") }
+            if (p and 0x30 != 0) Button({ d.subscribe(c) }) { Text("NOTIFY") }
         }
         if (p and 12 != 0) {
             OutlinedTextField(hexIn, { hexIn = it }, label = { Text("HEX e.g. AA BB 01") }, modifier = Modifier.fillMaxWidth())
